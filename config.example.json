@@ -1,0 +1,22 @@
+{
+  "token": "super-secret",
+  "v6Records": [
+    {
+      "zone": "a-zone-id",
+      "record": "a-record-id",
+      "name": "@"
+    }
+  ],
+  "v4Records": [
+    {
+      "zone": "a-zone-id",
+      "record": "a-record-id",
+      "name": "@"
+    },
+    {
+      "zone": "a-zone-id",
+      "record": "a-record-id-2",
+      "name": "blubb"
+    }
+  ]
+}
