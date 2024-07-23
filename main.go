@@ -27,7 +27,7 @@ func main() {
 	fmt.Println("Detected IPv6:", v6)
 
 	changed := hasIPv6Changed(v6)
-	forcedUpdate := len(os.Args) == 1 && os.Args[0] == "--force"
+	forcedUpdate := len(os.Args) == 2 && os.Args[1] == "--force"
 
 	if changed || forcedUpdate {
 		if changed {
@@ -61,7 +61,11 @@ func readConfig() Config {
 	configBytes, _ := io.ReadAll(file)
 
 	var config Config
-	json.Unmarshal(configBytes, &config)
+	if json.Unmarshal(configBytes, &config) != nil {
+		fmt.Println("Couldn't read configuration. Using empty config!")
+		fmt.Println()
+	}
+
 	return config
 }
 
