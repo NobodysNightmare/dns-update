@@ -1,15 +1,11 @@
 package main
 
 import (
-	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net"
-	"net/http"
 	"os"
-	"strings"
 )
 
 type Config struct {
@@ -24,88 +20,66 @@ type RecordConfig struct {
 	Name   string
 }
 
-type UpdateRecordRequest struct {
-	ZoneID string `json:"zone_id"`
-	Type   string
-	Name   string
-	Value  string
-	TTL    int
+func main() {
+	config := readConfig()
+
+	v6 := bestV6IP()
+	fmt.Println("Detected IPv6:", v6)
+
+	changed := hasIPv6Changed(v6)
+	forcedUpdate := len(os.Args) == 1 && os.Args[0] == "--force"
+
+	if changed || forcedUpdate {
+		if changed {
+			fmt.Printf("Change detected. ")
+		}
+
+		fmt.Printf("Updating AAAA records... ")
+		for _, c := range config.V6Records {
+			updateRecord(config.Token, c, "AAAA", v6)
+		}
+		fmt.Println("OK")
+		fmt.Println()
+
+		v4 := globalV4IP()
+		fmt.Println("Detected IPv4:", v4)
+
+		fmt.Printf("Updating A records... ")
+		for _, c := range config.V4Records {
+			updateRecord(config.Token, c, "A", v4)
+		}
+		fmt.Println("OK")
+
+		updateKnownIPv6(v6)
+	} else {
+		fmt.Println("No change, exiting...")
+	}
 }
 
-func main() {
+func readConfig() Config {
 	file, _ := os.Open("config.json")
 	configBytes, _ := io.ReadAll(file)
 
 	var config Config
 	json.Unmarshal(configBytes, &config)
-
-	v6 := bestV6IP()
-	v4 := globalV4IP()
-
-	fmt.Println("Detected IPv6:", v6)
-	fmt.Println("Detected IPv4:", v4)
-
-	// TODO: figure out if there was a change
-
-	for _, c := range config.V6Records {
-		updateRecord(config.Token, c, "AAAA", v6)
-	}
-
-	for _, c := range config.V4Records {
-		updateRecord(config.Token, c, "A", v4)
-	}
+	return config
 }
 
-func bestV6IP() net.IP {
-	addresses, err := net.InterfaceAddrs()
-	if err != nil {
-		return nil
-	}
-
-	for _, addr := range addresses {
-		if ipnet, ok := addr.(*net.IPNet); ok {
-			if ipnet.IP.IsGlobalUnicast() && !ipnet.IP.IsPrivate() {
-				return ipnet.IP
-			}
-		}
-	}
-
-	return nil
+func hasIPv6Changed(currentIP net.IP) bool {
+	return !knownIPv6().Equal(currentIP)
 }
 
-func globalV4IP() net.IP {
-	client := &http.Client{
-		Transport: &http.Transport{
-			DialContext: func(ctx context.Context, network string, addr string) (net.Conn, error) {
-				return (&net.Dialer{}).DialContext(ctx, "tcp4", addr)
-			},
-		},
-	}
+func knownIPv6() net.IP {
+	file, _ := os.Open("known-ipv6.txt")
+	defer file.Close()
 
-	resp, err := client.Get("https://ifconfig.co/")
-	if err != nil {
-		fmt.Println(err)
-		return nil
-	}
-
-	addrBytes, _ := io.ReadAll(resp.Body)
-	addrString := strings.TrimSpace(string(addrBytes))
-	return net.ParseIP(addrString)
+	addrBytes, _ := io.ReadAll(file)
+	return net.ParseIP(string(addrBytes))
 }
 
-func updateRecord(token string, config RecordConfig, recordType string, ip net.IP) {
-	reqBody := UpdateRecordRequest{
-		ZoneID: config.Zone,
-		Type:   recordType,
-		TTL:    30,
-		Name:   config.Name,
-		Value:  ip.String(),
-	}
-	jsonBytes, _ := json.Marshal(reqBody)
-	req, _ := http.NewRequest(http.MethodPut, fmt.Sprintf("https://dns.hetzner.com/api/v1/records/%s", config.Record), bytes.NewReader(jsonBytes))
-	req.Header.Set("Auth-API-Token", token)
-	resp, _ := http.DefaultClient.Do(req)
-	if resp.StatusCode != 200 {
-		fmt.Println(resp.StatusCode)
-	}
+func updateKnownIPv6(ip net.IP) {
+	file, _ := os.Create("known-ipv6.txt")
+	defer file.Close()
+
+	file.Write([]byte(ip.String()))
 }
